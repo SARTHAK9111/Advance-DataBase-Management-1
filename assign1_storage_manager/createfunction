@@ -1,0 +1,177 @@
+
+RC createPageFile(char *fileName){
+	
+	if(StrMangerStatus != true ){
+		return RC_STORAGE_MGR_NOT_INIT;
+	}
+
+	if(access( fname, F_OK ) != -1){
+		return  RC_FILE_PRESENT;
+	}
+
+	char *memoryBlock = malloc(PAGE_SIZE * sizeof(char));
+	memset(memoryBlock, '\0', PAGE_SIZE);
+
+
+	File *fp = fopen (fileName, " w+");
+	int CFW= fwrite(memoryBlock , 1, PAGE_SIZE, fp);
+
+	if (CFW == PAGE_SIZE) {
+		free(memoryBlock);
+    	fclose(fp);
+		return RC_WRITE_FAILED;   
+    
+	} else {
+    	free(memoryBlock);
+    	fclose(fp);
+    	return RC_OK;
+	}
+
+}
+
+
+///
+
+RC openPageFile(char *fileName, SM_FileHandle *fHandle) {
+
+	if(StrMangerStatus != true ){
+		return RC_STORAGE_MGR_NOT_INIT;
+	}
+
+	if(access( filename, F_OK ) == -1){
+		return RC_FILE_NOT_FOUND;
+	}
+	FILE *fp=fopen(fileName, "r+");
+
+	fseek(fp, 0, SEEK_END);// pointing to end
+	
+	int LastByte= ftell(fp);
+	int length = LastByte +1;
+
+	fHandle->totalNumPages= length/PAGE_SIZE;
+	fHandle->curPagePos = 0;
+	fHandle->fileName = fileName;
+	fHandle->mgmtInfo = fp;
+
+	fseek(fp, 0, SEEK_SET);// pointing back to start;
+
+	return RC_OK;
+	
+}
+
+///
+
+RC closePageFile(SM_FileHandle *fHandle) {
+	
+	if(StrMangerStatus != true ){
+		return RC_STORAGE_MGR_NOT_INIT;
+	}
+
+	if(access( fHandle->fileName, F_OK ) == -1){
+		return  RC_FILE_NOT_FOUND;
+	}
+	RC closecheck=fclose(fHandle->mgmtInfo);
+	fHandle->totalNumPages=-1;
+	fHandle->curPagePos=-1;
+	fHandle->curPagePos='\0';
+	fHandle->mgmtInfo=NULL;
+			
+	if(closecheck == 0){
+		return RC_OK;
+	}else{
+		return RC_FILE_NOT_FOUND;
+	}
+}
+
+
+RC readBlock(int pageNum, SM_FileHandle *fHandle, SM_PageHandle memPage) {
+    if (strManger != RC_OK)
+        return RC_STORAGE_MGR_NOT_INIT;
+
+    if (fHandle == NULL || fHandle->fileName == NUll))
+        return RC_FILE_NOT_FOUND;
+
+    if (pageNum < 0 || pageNum >= fHandle->totalNumPages)
+        return RC_READ_NON_EXISTING_PAGE;
+
+   fseek(file, pageNum * PAGE_SIZE,SEEK_SET);
+	read_size = fread(memPage, sizeof(char), PAGE_SIZE, file);
+		if (read_size < PAGE_SIZE || read_size > PAGE_SIZE) {
+
+			return RC_READ_NON_EXISTING_PAGE;
+		}
+		fHandle->curPagePos= pageNum;
+		returncode = RC_OK;
+}
+
+
+/////
+RC getBlockPos(SM_FileHandle *fHandle) {
+	
+	RC block_pos= fHandle->curPagePos;
+	return block_pos;
+}
+
+////
+RC readNextBlock (SM_FileHandle *fHandle, SM_PageHandle memPage)
+{
+
+	if (strManger != RC_OK)
+        return RC_STORAGE_MGR_NOT_INIT;
+
+    if (fHandle == NULL || fHandle->fileName == NUll))
+        return RC_FILE_NOT_FOUND;
+
+    RC pageNum= fHandle->curPagePos+1;
+
+    if (pageNum < 0 || pageNum >= fHandle->totalNumPages)
+        return RC_READ_NON_EXISTING_PAGE;
+
+   fseek(file, pageNum * PAGE_SIZE,SEEK_SET);
+	read_size = fread(memPage, sizeof(char), PAGE_SIZE, file);
+		if (read_size < PAGE_SIZE || read_size > PAGE_SIZE) {
+
+			return RC_READ_NON_EXISTING_PAGE;
+		}
+		fHandle->curPagePos= pageNum;
+		returncode = RC_OK;
+
+}
+/////
+RC readLastBlock(SM_FileHandle *fHandle, SM_PageHandle memPage) {
+	if (strManger != RC_OK)
+        return RC_STORAGE_MGR_NOT_INIT;
+
+    if (fHandle == NULL || fHandle->fileName == NUll))
+        return RC_FILE_NOT_FOUND;
+
+    RC pageNum= fHandle->totalNumPages -1;
+
+    if (pageNum < 0 || pageNum >= fHandle->totalNumPages)
+        return RC_READ_NON_EXISTING_PAGE;
+
+   fseek(file, pageNum * PAGE_SIZE,SEEK_SET);
+	read_size = fread(memPage, sizeof(char), PAGE_SIZE, file);
+		if (read_size < PAGE_SIZE || read_size > PAGE_SIZE) {
+
+			return RC_READ_NON_EXISTING_PAGE;
+		}
+		fHandle->curPagePos= pageNum;
+		returncode = RC_OK
+}
+
+////
+RC ensureCapacity(int numberOfPages, SM_FileHandle *fHandle) {
+
+	
+	if (fHandle->numberOfPages > pageNum) { //If the new capacity is greater than current capacity
+		
+		for (i = 0; i < fHandle->numberOfPages - pageNum: i++){ 
+			appendEmptyBlock(fHandle);
+			}
+		return RC_OK;
+	}
+
+	else
+		return RC_WRITE_FAILED;
+}
