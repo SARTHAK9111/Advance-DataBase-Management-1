@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdbool.h>
 #include <unistd.h>
+#include <sys/stat.h>
 #include "storage_mgr.h"
 #include "dberror.h"
 #ifndef F_OK
@@ -10,47 +11,42 @@
 #endif
 
 bool StorageManagerStatus = false;
+bool fileIsOpen = false;
 void initStorageManager(void)
 {
     if (StorageManagerStatus == false)
     {
         StorageManagerStatus = true;
         printf("\n <----- Starting Storage Manager------->\n");
-        printf("<------BY Group 49------>\n");
+        printf("       <--------BY Group 49-------->      \n");
     }
 }
 
 RC createPageFile(char *fileName)
 {
 
-    FILE *fp;
-    RC code;
-    size_t memorySize = PAGE_SIZE * sizeof(char);
+    RC memorySize = PAGE_SIZE * sizeof(char);
     char *memoryBlock = malloc(memorySize);
 
-    fp = fopen(fileName, "w+");
+    FILE *fp = fopen(fileName, "w+");
+
     if (fp == 0)
     {
-        code = RC_FILE_NOT_FOUND;
+        return RC_FILE_NOT_FOUND;
     }
-    else
-    {
-        memset(memoryBlock, '\0', PAGE_SIZE);
-        fwrite(memoryBlock, sizeof(char), PAGE_SIZE, fp);
-        fclose(fp);
-        code = RC_OK;
-    }
+
+    fileIsOpen = true;
+    memset(memoryBlock, '\0', PAGE_SIZE);
+    fwrite(memoryBlock, sizeof(char), PAGE_SIZE, fp);
+    fclose(fp);
 
     free(memoryBlock);
-    return code;
+    return RC_OK;
 }
-
-///
 
 RC openPageFile(char *fileName, SM_FileHandle *fHandle)
 {
-
-    if (StorageManagerStatus != true)
+     if (StorageManagerStatus != true)
     {
         return RC_STORAGE_MGR_NOT_INIT;
     }
@@ -67,6 +63,7 @@ RC openPageFile(char *fileName, SM_FileHandle *fHandle)
     int length = LastByte + 1;
 
     fHandle->totalNumPages = length / PAGE_SIZE;
+    
     fHandle->curPagePos = 0;
     fHandle->fileName = fileName;
     fHandle->mgmtInfo = fp;
@@ -80,14 +77,18 @@ RC openPageFile(char *fileName, SM_FileHandle *fHandle)
 
 extern RC closePageFile(SM_FileHandle *fHandle)
 {
+    if (StorageManagerStatus != true)
+    {
+        return RC_STORAGE_MGR_NOT_INIT;
+    }
     if (fHandle == NULL || fHandle->mgmtInfo == NULL)
         return RC_FILE_HANDLE_NOT_INIT;
+    FILE *fp = fHandle->mgmtInfo;
 
-    // Close the file using the stored file pointer
-    if (fclose((FILE *)fHandle->mgmtInfo) == 0)
+    if (fclose(fp) == 0)
     {
-        // Set mgmtInfo to NULL after closing the file
         fHandle->mgmtInfo = NULL;
+        fileIsOpen = false;
         return RC_OK;
     }
     else
@@ -99,17 +100,23 @@ extern RC closePageFile(SM_FileHandle *fHandle)
 RC destroyPageFile(char *fileName)
 {
     // Use the remove function to delete the file
-    if (remove(fileName) != 0)
+    if (fileIsOpen == true)
+    {
+        return RC_FILE_NOT_CLOSE;
+    }
+    int fileflag = remove(fileName);
+    if (fileflag != 0)
     {
         // If remove fails, return an error code
         return RC_FILE_NOT_FOUND; // You can define this error code in dberror.h
     }
-    printf("\n in Destroy function \n");
-    return RC_OK; // Return success if the file was successfully deleted
+    // printf("\n in Destroy function \n");
+    return RC_OK;
 }
 
 RC readBlock(int pageNum, SM_FileHandle *fHandle, SM_PageHandle memPage)
 {
+    printf("in read block");
     if (StorageManagerStatus != true)
         return RC_STORAGE_MGR_NOT_INIT;
 
@@ -118,28 +125,38 @@ RC readBlock(int pageNum, SM_FileHandle *fHandle, SM_PageHandle memPage)
 
     if (pageNum < 0 || pageNum >= fHandle->totalNumPages)
         return RC_READ_NON_EXISTING_PAGE;
-    FILE *fp;
-    fseek(fp, pageNum * PAGE_SIZE, SEEK_SET);
-    RC read_size = fread(memPage, sizeof(char), PAGE_SIZE, fp);
-    if (read_size < PAGE_SIZE || read_size > PAGE_SIZE)
+  
+    FILE *fp= fHandle->mgmtInfo;
+    RC position = pageNum * PAGE_SIZE;
+    fseek(fp, position, SEEK_SET);
+    RC ReadErrorFlag = fread(memPage, sizeof(char), PAGE_SIZE, fp);
+  
+    if (ReadErrorFlag < PAGE_SIZE || ReadErrorFlag > PAGE_SIZE)
     {
-
+       
         return RC_READ_NON_EXISTING_PAGE;
     }
     fHandle->curPagePos = pageNum;
-    printf("exiting read block"); 
+   
     return RC_OK;
 }
 
 RC getBlockPos(SM_FileHandle *fHandle)
 {
-
-    RC block_pos = fHandle->curPagePos;
-    return block_pos;
+    if (fileIsOpen == true)
+    {
+        RC block_pos = fHandle->curPagePos;
+        return block_pos;
+    }
 }
 
 extern RC readFirstBlock(SM_FileHandle *fHandle, SM_PageHandle memPage)
-{
+{   
+    printf("in readFirstBlock ");
+    if (StorageManagerStatus != true)
+    {
+        return RC_STORAGE_MGR_NOT_INIT;
+    }
     // Check if the file handle is initialized
     if (fHandle == NULL || fHandle->mgmtInfo == NULL)
     {
@@ -147,12 +164,14 @@ extern RC readFirstBlock(SM_FileHandle *fHandle, SM_PageHandle memPage)
     }
 
     // Set the file position to the beginning (first page)
-    fseek(fHandle->mgmtInfo, 0, SEEK_SET);
+    FILE *fp = fHandle->mgmtInfo;
+    RC position = 0;
+    fseek(fp, position, SEEK_SET);
 
     // Read the first block (page) into memPage
-    size_t bytesRead = fread(memPage, sizeof(char), PAGE_SIZE, fHandle->mgmtInfo);
+    RC ReadErrorFlag = fread(memPage, sizeof(char), PAGE_SIZE, fp);
 
-    if (bytesRead != PAGE_SIZE)
+    if (ReadErrorFlag != PAGE_SIZE)
     {
         return RC_FILE_READ_ERROR;
     }
@@ -165,72 +184,79 @@ extern RC readFirstBlock(SM_FileHandle *fHandle, SM_PageHandle memPage)
 
 extern RC readPreviousBlock(SM_FileHandle *fHandle, SM_PageHandle memPage)
 {
-    // Check if the file handle is initialized
-    if (fHandle == NULL || fHandle->mgmtInfo == NULL)
+    printf("in readPreviousBlock ");
+    if (StorageManagerStatus != true)
     {
-        return RC_FILE_HANDLE_NOT_INIT;
+        return RC_STORAGE_MGR_NOT_INIT;
     }
-
+    // Check if the file handle is initialized
+   
+    FILE *fp = fHandle->mgmtInfo;
     // Calculate the position of the previous block
-    int previousPagePos = fHandle->curPagePos - 1;
+    RC position = fHandle->curPagePos - 1;
 
     // Ensure the previous block is within bounds
-    if (previousPagePos < 0)
-    {
+    if (position < 0)
+    {   
+        printf("inside if IMP");
+        
         return RC_READ_NON_EXISTING_PAGE;
     }
 
-    // Calculate the file position for the previous block
-    long previousPageOffset = (long)previousPagePos * PAGE_SIZE;
+   printf("OUTSIDE if");
 
     // Set the file position to the beginning of the previous block
-    fseek(fHandle->mgmtInfo, previousPageOffset, SEEK_SET);
+    fseek(fp, position * PAGE_SIZE, SEEK_SET);
 
     // Read the previous block (page) into memPage
-    size_t bytesRead = fread(memPage, sizeof(char), PAGE_SIZE, fHandle->mgmtInfo);
+    RC ReadErrorFlag = fread(memPage, sizeof(char), PAGE_SIZE, fp);
 
-    if (bytesRead != PAGE_SIZE)
+    if (ReadErrorFlag != PAGE_SIZE)
     {
         return RC_FILE_READ_ERROR;
     }
 
     // Update the current page position
-    fHandle->curPagePos = previousPagePos;
+    fHandle->curPagePos = position;
 
     return RC_OK;
 }
 
 RC readCurrentBlock(SM_FileHandle *fHandle, SM_PageHandle memPage)
 {
+    printf("in readCurrentBlock ");
+    if (StorageManagerStatus != true)
+    {
+        return RC_STORAGE_MGR_NOT_INIT;
+    }
+
     // Check if the file handle is initialized
-    if (fHandle == NULL)
+     if (fHandle == NULL || fHandle->mgmtInfo == NULL)
+    {
         return RC_FILE_HANDLE_NOT_INIT;
-
-    // Check if the file is open
-    if (fHandle->mgmtInfo == NULL)
-        return RC_FILE_NOT_FOUND;
-
+    }
+    FILE *fp = fHandle->mgmtInfo;
     // Calculate the offset to the current block
-    long offset = fHandle->curPagePos * PAGE_SIZE;
+    RC position = fHandle->curPagePos * PAGE_SIZE;
+    fseek(fp, position, SEEK_SET);
+    RC ReadErrorFlag = fread(memPage, sizeof(char), PAGE_SIZE, fp);
 
-    // Use fseek to move the file pointer to the beginning of the current block
-    if (fseek(fHandle->mgmtInfo, offset, SEEK_SET) != 0)
-        return RC_FILE_READ_ERROR;
+    if (ReadErrorFlag != PAGE_SIZE)
+    {
 
-    // Read the current block (page) into memPage
-    if (fread(memPage, 1, PAGE_SIZE, fHandle->mgmtInfo) != PAGE_SIZE)
         return RC_FILE_READ_ERROR;
+    }
 
     // Update the current page position
-    fHandle->curPagePos++;
+    fHandle->curPagePos = position + 1;
 
     return RC_OK;
 }
 
 RC readNextBlock(SM_FileHandle *fHandle, SM_PageHandle memPage)
 {
-
-    if (StorageManagerStatus != RC_OK)
+    printf("in readNextBlock ");
+    if (StorageManagerStatus != true)
         return RC_STORAGE_MGR_NOT_INIT;
 
     if (fHandle == NULL || fHandle->fileName == NULL)
@@ -241,7 +267,7 @@ RC readNextBlock(SM_FileHandle *fHandle, SM_PageHandle memPage)
     if (pageNum < 0 || pageNum >= fHandle->totalNumPages)
         return RC_READ_NON_EXISTING_PAGE;
 
-    FILE *fp;
+    FILE *fp = fHandle->mgmtInfo;
     fseek(fp, pageNum * PAGE_SIZE, SEEK_SET);
     RC read_size = fread(memPage, sizeof(char), PAGE_SIZE, fp);
     if (read_size < PAGE_SIZE || read_size > PAGE_SIZE)
@@ -255,7 +281,8 @@ RC readNextBlock(SM_FileHandle *fHandle, SM_PageHandle memPage)
 
 RC readLastBlock(SM_FileHandle *fHandle, SM_PageHandle memPage)
 {
-    if (StorageManagerStatus != RC_OK)
+    printf("in readLastBlock ");
+    if (StorageManagerStatus != true)
         return RC_STORAGE_MGR_NOT_INIT;
 
     if (fHandle == NULL || fHandle->fileName == NULL)
